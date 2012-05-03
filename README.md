@@ -4,6 +4,14 @@ Inter-process EventEmitter
 
 ### Inter-process EventEmitter over process.send and TCP/IP or UNIX Domain Sockets for node.js
 
+### Installation
+
+```npm install ipevents```
+
+### Usage
+
+Coming soon.
+
 Anatomy of a message
 --------------------
 

@@ -77,7 +77,7 @@ Boolean TRUE if the process is the very top process.
 Boolean TRUE if the process is a master according to cluster.isMaster
 
 ``.isWorker`` (Boolean)  
-Boolean TRUE if the process is a master according to cluster.isWorker
+Boolean TRUE if the process is a worker according to cluster.isWorker
 
 ### Functions
 

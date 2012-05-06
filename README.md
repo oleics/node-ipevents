@@ -1,8 +1,8 @@
 
-Inter-process EventEmitter
+Inter-process Event-Emitter
 ==========================
 
-### Inter-process EventEmitter over process.send and TCP/IP or UNIX Domain Sockets for node.js
+### Inter-process Event-Emitter over process.send and TCP/IP or UNIX Domain Sockets for node.js
 
 ### Installation
 
@@ -10,67 +10,140 @@ Inter-process EventEmitter
 
 ### Usage
 
-Coming soon.
+```js
+var ipem = require('ipevents')
+
+ipem
+  .options({
+  })
+  .on('ready', function() {
+    console.log('ready', this.pid)
+    
+    ipem.on('online', function() {
+      console.log('process online', this.pid, this.pids)
+    })
+    ipem.on('offline', function() {
+      console.log('process online', this.pid, this.pids)
+    })
+  })
+.start()
+```
 
 Anatomy of a message
 --------------------
 
 ```js
 {
-  pid:  Number,String // The origin (pid) of the message.
+  from: Number,String // The origin (pid) of the message.
   pids: Array         // An array of each pid the message passed.
-  to: Number,String   // Target of the message. (.push())
+  to: Number,String   // Target of the message.
   route: Array        // An array of process-pids representing
-                      // the route the message should take. (.push())
+                      // the route the message should take.
   type: Number        // Type of the message (eg event, push, broadcast).
+  event: String       // Name of the event.
+  args: Array         // Array of arguments for the event
 }
 ```
 
-Class: IpEventEmitter
----------------------
+API
+---
 
-Inherits from ``events.EventEmitter``
+### Options
 
-### Events
+``restart`` (default: true)  
+Automatically restart child-processes.
 
-``ready``  
-Emitted when the instance of IpEventEmitter is ready.
-This event is exclusive to the process.
+``delayRestart`` (default: 1000)  
+Delay automatic restart of a child-process in milliseconds.
 
-``online``  
-Emitted to signal other processes that a new process connected.
+``useSocket`` (default: true)  
+Use a TCP/IP or UNIX Domain Socket to shim process.send.
 
-### Properties
+``socket.socketPath`` (default: null)  
+The path for to the UNIX Domain Socket.
 
-``.pid``  
-The identifier of a process.
+``socket.port`` (default: 7100)  
+The port for TCP/IP connections.
 
-``.isMaster``  
+``socket.host`` (default: localhost)  
+The host for TCP/IP connections.
 
+``socket.reconnect`` (default: true)  
+Automatically reconnect to server.
 
-``.isWorker``  
+``socket.delayReconnect`` (default: 3000)  
+Delay automatic reconnects in milliseconds.
 
-``.childsOnline``  
+### Attributes
 
-``.childs``  
+``.pid`` (String)  
+The identifier of the process.
 
-### Methods
+``.parentPid`` (String, null)  
+The identifier of the parent-process (if any).
 
-``.emit(eventName, arg1, arg2, ...)``  
+``.childsOnline`` (Number)  
+Number of child-processes.
+
+``.isGrandMaster`` (Boolean)  
+Boolean TRUE if the process is the very top process.
+
+``.isMaster`` (Boolean)  
+Boolean TRUE if the process is a master according to cluster.isMaster
+
+``.isWorker`` (Boolean)  
+Boolean TRUE if the process is a master according to cluster.isWorker
+
+### Functions
+
+``.options(options)``  
+Sets the options for the inter-process event emitter.
+
+#### Events
+
+``.bubble(eventName, arg1, arg2, ...)``  
 Emits an event and sends it up to the parent-process.
 
-``.push(pids, eventName, arg1, arg2, ...)``  
-Pushes an event down to a specific child-process.
-Once reached there, .push() emits the event.
+``.sendToParents(eventName, arg1, arg2, ...)``  
+Sends an event up to the parent-processes.
+
+``.sendToChilds(eventName, arg1, arg2, ...)``  
+Sends an event down to the child-processes.
+
+``.sendToSiblings(eventName, arg1, arg2, ...)``  
+Sends an event to all siblings of the process.
+
+``.sendToGrandMaster(eventName, arg1, arg2, ...)``  
+Sends an event to the grand master.
+
+``.sendToChild(pid, eventName, arg1, arg2, ...)``  
+Sends an event to a specific child-process.
+
+``.sendTo(pids, eventName, arg1, arg2, ...)``  
+Pushes an event to a specific process.
 
 ``.broadcast(eventName, arg1, arg2, ...)``  
-Sends an event to all child-processes listening to the event
+Sends an event to all processes.
+
+#### Process
 
 ``.fork(path, arguments)``  
 Forks a new node child-process.
 
 ``.worker()``  
 Forks a new child-process via the core cluster-module.
+
+### Events
+
+``ready``  
+Emitted when the inter-process event emitter is ready.
+This event is exclusive to the process.
+
+``online``  
+Emitted to signal other processes that a new process connected.
+
+``offline``  
+Emitted on the exit of a process.
 
 MIT License
 -----------

@@ -1,63 +1,463 @@
 
-module.exports = IpEventEmitter
-
 var EventEmitter = require('events').EventEmitter
   , util = require('util')
   , cp = require('child_process')
   , cluster = require('cluster')
   , jsonsocket = require('./jsonsocket')
 
-var MSG_TYPE_EVENT = 1
-  , MSG_TYPE_PUSH = 2
-  , MSG_TYPE_BROADCAST = 3
+var MSG_TYPE_TOPARENTS  = 'toParents'
+  , MSG_TYPE_TOCHILDS   = 'toChilds'
+  , MSG_TYPE_TOSIBLINGS = 'toSiblings'
+  , MSG_TYPE_TOCHILD    = 'toChild'
+  , MSG_TYPE_TOGM       = 'toGM'
+  , MSG_TYPE_SENDTO     = 'sendTo'
+  , MSG_TYPE_BROADCAST  = 'broadcast'
 
-function IpEventEmitter() {
-  if(!(this instanceof IpEventEmitter)) return new IpEventEmitter()
-  var self = this
+var em = new EventEmitter()
+  , childs = {}
+  , netmap = {}
+  , started = false
+  , opts = {
+      restart: true
+      , delayRestart: 1000
+      
+      // socket
+      , useSocket: true
+      , socket: {
+          socketPath: null
+          , port: 7100
+          , host: 'localhost'
+          , reconnect: true
+          , delayReconnect: 3000
+        }
+    }
+
+// variables
+em.parentPid = null
+em.pid = process.pid+''
+em.childsOnline = 0
+em.isGrandMaster = false
+em.isMaster = cluster.isMaster
+em.isWorker = cluster.isWorker
+
+// set to comply with messages
+em.from = em.pid
+em.pids = [em.pid]
+
+// functions
+em.options = options
+em.start = start
+
+em.bubble = bubble
+em.sendToParents = sendToParents
+em.sendToChilds = sendToChilds
+em.sendToSiblings = sendToSiblings
+em.sendToGrandMaster = sendToGrandMaster
+em.sendToChild = sendToChild
+em.sendTo = sendTo
+em.broadcast = broadcast
+
+em.fork = fork
+em.worker = worker
+
+em.printNetmap = printNetmap
+
+init()
+
+// export
+module.exports = em
+
+function options(options) {
+  options = options || {}
   
-  self.pid = process.pid
-  self.pids = [self.pid]
-  
-  self.isMaster = cluster.isMaster
-  self.isWorker = cluster.isWorker
-  
-  self.childsOnline = 0
-  self.childs = {}
-  
-  self.netmap = {}
-  
-  process.on('message', self.onProcessMessage.bind(self))
-  
-  self.on('online', function() {
-    self.addToNetmap(this.pids)
+  Object.keys(options).forEach(function(k) {
+    if(opts.hasOwnProperty(k)) {
+      opts[k] = options[k]
+    }
   })
   
-  self.on('offline', function() {
-    self.removeFromNetmap(this.pids)
-  })
-  
-  setInterval(self.printNetmap.bind(self), 5000)
-  
-  if(process.send) {
-    EventEmitter.prototype.emit.call(self, 'ready')
-    self.emit('online')
-  } else {
-    self.processSendShim()
-  }
+  return em
 }
-util.inherits(IpEventEmitter, EventEmitter)
+
+function init() {
+  
+  process.on('message', onProcessMessage)
+  
+  em.on('newListener', function(eventName) {
+    if(childs[this.from]) {
+      childs[this.from].listeners[eventName] = true
+    }
+    sendToParents('newListener', eventName)
+  })
+  
+  em.on('ready', function() {
+    em.isGrandMaster = process.send ? false : true
+  })
+  
+  em.on('parent', function(pid) {
+    em.parentPid = pid
+  })
+  
+  em.on('online', function() {
+    addToNetmap(this.pids)
+    if(childs[this.from]) {
+      sendToChild(this.from, 'parent', em.pid)
+    }
+  })
+  
+  em.on('offline', function() {
+    removeFromNetmap(this.pids)
+  })
+  
+  return em
+}
+
+function start() {
+  if(started) return em
+  started = true
+  
+  if(process.send || ! opts.useSocket) {
+    process.nextTick(function() {
+      em.emit('ready')
+      bubble('online')
+    })
+  } else {
+    processSendShim()
+  }
+  
+  return em
+}
 
 // Handles messages sent to this process.
-IpEventEmitter.prototype.onProcessMessage = function(msg) {
-  switch(msg.type) {
-    case MSG_TYPE_EVENT:
-      // We got the emit of an event
-      // console.log('onProcessMessage', 'event', msg)
+function onProcessMessage(msg) {
+  return handleMessage(msg)
+}
+
+// Emits an event and sends it up to the parent-process if
+// process.send exists
+function bubble(/*eventName, arg1, arg2, ...*/) {
+  switch(arguments.length) {
+    case 1:
+      em.emit.call(em, arguments[0])
+      sendToParents.call(null, arguments[0])
+      break
+    case 2:
+      em.emit.call(em, arguments[0], arguments[1])
+      sendToParents.call(null, arguments[0], arguments[1])
+      break
+    case 3:
+      em.emit.call(em, arguments[0], arguments[1], arguments[2])
+      sendToParents.call(null, arguments[0], arguments[1], arguments[2])
+      break
+    default:
+      em.emit.apply(em, arguments)
+      sendToParents.apply(null, arguments)
+      break
+  }
+  
+  return em
+}
+
+// Sends an event to all parent processes.
+function sendToParents(/*event, arg1, arg2, ...*/) {
+  if(process.send) {
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_TOPARENTS                       // type of command
+          , event: arguments[0]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
+        }
+    process.send(msg)
+  }
+  
+  return em
+}
+
+// Sends an event to all listenting child processes.
+function sendToChilds(/*event, arg1, arg2, ...*/) {
+  var pids = Object.keys(childs)
+  
+  if(pids.length) {
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_TOCHILDS                        // type of command
+          , event: arguments[0]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
+        }
+      , child
+    
+    // send the event to listening child processes:
+    pids.forEach(function(pid) {
+      child = childs[pid]
       
-      msg.pids.push(this.pid)
+      if(child.listeners[msg.event]) {
+        child.send(msg)
+      }
+    })
+    
+    child = null
+  }
+  
+  return em
+}
+
+// Sends an event to all listenting siblings of a process.
+function sendToSiblings(/*event, arg1, arg2, ...*/) {
+  if(process.send) {
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_TOSIBLINGS                      // type of command
+          , event: arguments[0]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
+        }
+    process.send(msg)
+  }
+  
+  return em
+}
+
+// Sends an event to one child
+function sendToChild(/*pid, event, arg1, arg2, ...*/) {
+  var child = childs[arguments[0]]
+  
+  if(child) {
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , to: arguments[0]                               // target pid
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_TOCHILD                         // type of command
+          , event: arguments[1]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 2) // arguments of the event
+        }
+    child.send(msg)
+  } else {
+    em.emit('error', new Error('.sendToChild() failed: Child with pid '+arguments[0]+' not found.'))
+  }
+  
+  return em
+}
+
+// Sends an event to the grand master
+function sendToGrandMaster(/*pid, event, arg1, arg2, ...*/) {  
+  if(process.send) {
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_TOGM                            // type of command
+          , event: arguments[0]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
+        }
+    process.send(msg)
+  } else if(em.isGrandMaster) {
+    // emit
+    em.emit.apply(em, arguments)
+  } else {
+    em.emit('error', new Error('.sendToGrandMaster() failed: process.send not defined.'))
+  }
+  
+  return em
+}
+
+
+// Sends an event to a process.
+// pids is the route to take.
+function sendTo(/*route, event, arg1, arg2, ...*/) {
+  var route = arguments[0].slice(0)
+    , to = route.pop()
+    , pids = []
+  
+  // check if next pid in route is the current pid
+  if(to === em.pid) {
+    pids.push(to)
+    to = route.pop()
+  } else {
+    // make sure that the current pid is in the chain of pids the
+    // message traveled
+    pids.push(em.pid)
+  }
+  
+  var msg = {
+        from: em.pid                                     // pid that started the push
+        , pids: pids                                     // chain of pids
+        , to: route.length ? route[0] : to               // target pid
+        , route: route                                   // route to take
+        , type: MSG_TYPE_SENDTO                          // type of command
+        , event: arguments[1]                            // name of the event
+        , args: Array.prototype.slice.call(arguments, 2) // arguments of the event
+      }
+    , child = childs[to]
+  
+  if(child) {
+    child.send(msg)
+  } else if(em.parentPid === to) {
+    process.send(msg)
+  } else {
+    // no process found to push the message to
+    console.log(em.pid, to, route, Object.keys(childs))
+    em.emit('error', new Error('Can not push to '+to+': Process not found.'))
+  }
+  
+  return em
+}
+
+// Broadcasts an event to all processes.
+function broadcast(/*event, arg1, arg2, ...*/) {
+  var pids = Object.keys(childs)
+  
+  if(pids.length || process.send) {
+    
+    // create the message
+    var msg = {
+          from: em.pid                                     // pid of the origin
+          , pids: [em.pid]                                 // chain of pids
+          , type: MSG_TYPE_BROADCAST                       // type of command
+          , event: arguments[0]                            // name of the event
+          , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
+        }
+      , child
+    
+    // send the event to the parent
+    if(process.send) {
+      process.send(msg)
+    }
+    
+    // send the event to listening child processes:
+    pids.forEach(function(pid) {
+      child = childs[pid]
+      if(child.listeners[msg.event]) {
+        child.send(msg)
+      }
+    })
+  }
+  
+  return em
+}
+
+// Forks a new child-process.
+function fork(path, args) {
+  var c = cp.fork(path, args || [])
+  
+  c.once('exit', function() {
+    if(opts.restart) {
+      if(opts.delayRestart) {
+        setTimeout(function() {
+          fork(path, args)
+        }, opts.delayRestart)
+      } else {
+        fork(path, args)
+      }
+    }
+    c = null
+  })
+  
+  return registerProcess(c)
+}
+
+// Forks a new worker child-process.
+function worker() {
+  var c = cluster.fork()
+  
+  c.once('exit', function() {
+    if(opts.restart) {
+      if(opts.delayRestart) {
+        setTimeout(function() {
+          worker()
+        }, opts.delayRestart)
+      } else {
+        worker()
+      }
+    }
+    c = null
+  })
+  
+  return registerProcess(c)
+}
+
+// Registers a new child-process.
+function registerProcess(child) {
+  if(childs[child.pid]) {
+    em.emit('error', new Error('Child already registered, pid '+child.pid))
+    return
+  }
+  var child = {
+    pid: child.pid
+    , process: child
+    , listeners: {} // events the process listens to
+    , send: function(msg) {
+        try {
+          child.process.send(msg)
+        } catch(err) {
+          em.emit('error', err)
+        }
+      }
+  }
+  child.process.on('message', onChildProcessMessage.bind(null, child))
+  child.process.on('exit', onChildProcessExit.bind(null, child))
+  childs[child.pid] = child
+  em.childsOnline += 1
+  return child
+}
+
+// Handles messages from a child process.
+function onChildProcessMessage(child, msg) {
+  // track listeners of child process
+  // if(msg.type === MSG_TYPE_TOPARENTS && msg.event === 'newListener') {
+    // child.listeners[msg.args[0]] = true
+  // }
+  
+  handleMessage(msg)
+}
+
+// Handles the exit of a child.
+function onChildProcessExit(child, code, signal) {
+  childs[child.pid] = null
+  delete childs[child.pid]
+  em.childsOnline -= 1
+  em.pids = [em.pid]
+  bubble('offline', child.pid)
+  child = null
+}
+
+// 
+function _emitScoped(scope, eventName, args) {
+  var listeners = em.listeners(eventName)
+  if(listeners.length) {
+    listeners.forEach(function(listener) {
+      switch(args.length) {
+        case 1:
+          listener.call(scope, args[0])
+          break
+        case 2:
+          listener.call(scope, args[0], args[1])
+          break
+        case 3:
+          listener.call(scope, args[0], args[1], args[2])
+          break
+        default:
+          listener.apply(scope, args)
+          break
+      }
+    })
+  }
+}
+
+// 
+function handleMessage(msg) {
+  switch(msg.type) {
+    case MSG_TYPE_TOPARENTS:      
+      // push pid to pid-chain
+      msg.pids.push(em.pid)
       
       // emit the event
-      this._emitScoped(msg, msg.name, msg.args)
+      _emitScoped(msg, msg.event, msg.args)
       
       // send the event up to the parent process
       if(process.send) {
@@ -65,25 +465,91 @@ IpEventEmitter.prototype.onProcessMessage = function(msg) {
       }
       
       break
-    case MSG_TYPE_PUSH:
-      // We got the push of an event
-      // console.log('onProcessMessage', 'push', msg)
+    case MSG_TYPE_TOCHILDS:
+      msg.pids.push(em.pid)
+      
+      _emitScoped(msg, msg.event, msg.args)
+      
+      // send the event to listening child processes:
+      var child
+      Object.keys(childs).forEach(function(pid) {
+        child = childs[pid]
+        if(child.listeners[msg.event]) {
+          child.send(msg)
+        }
+      })
+      
+      break
+    case MSG_TYPE_TOSIBLINGS:
+      // console.log('MSG_TYPE_TOSIBLINGS', em.pid, msg)
+      msg.pids.push(em.pid)
+      
+      if(msg.pids.length === 3) {
+        _emitScoped(msg, msg.event, msg.args)
+      } else {
+        // send the event to listening child processes
+        // skip child with the pid in msg.from
+        var child
+        Object.keys(childs).forEach(function(pid) {
+          child = childs[pid]
+          if(pid !== msg.from && child.listeners[msg.event]) {
+            child.send(msg)
+          }
+        })
+      }
+      
+      break
+    case MSG_TYPE_TOCHILD:
+      // console.log('MSG_TYPE_TOCHILD', em.pid, msg)
+      msg.pids.push(em.pid)
       
       // is the event for me?
-      if(msg.to === this.pid) {
+      if(msg.to === em.pid) {
         // yes, it is
         // emit the event
-        msg.pids.push(this.pid)
-        this._emitScoped(msg, msg.name, msg.args)
+        _emitScoped(msg, msg.event, msg.args)
+      } else {
+        em.emit('error', new Error('Got a message that is not for me: msg.to '+msg.to+', em.pid '+em.pid+''))
+      }
+      
+      break
+    case MSG_TYPE_TOGM:
+      // console.log('MSG_TYPE_TOGM', em.pid, msg)
+      msg.pids.push(em.pid)
+      
+      // is the event for me?
+      if(em.isGrandMaster) {
+        // yes, it is
+        // emit the event
+        _emitScoped(msg, msg.event, msg.args)
+      } else if(process.send) {
+        // nope, not for me
+        // send it up
+        process.send(msg)
+      } else {
+        em.emit('error', new Error('Could not deliver a message to the grand master: process.send is not defined.'))
+      }
+      
+      break
+    case MSG_TYPE_SENDTO:
+      // console.log('MSG_TYPE_SENDTO', em.pid, msg)
+      msg.pids.push(em.pid)
+      
+      // is the event for me?
+      if(msg.to === em.pid) {
+        // yes, it is
+        // emit the event
+        _emitScoped(msg, msg.event, msg.args)
       } else {
         // nope, it is not for me
         // send it further down the road
         var pid = msg.route.pop()
-          , child = this.childs[pid]
+          , child = childs[pid]
         
         if(child) {
-          msg.pids.push(pid)
-          child.process.send(msg)
+          child.send(msg)
+        } else if(em.parentPid === pid) {
+          process.send(msg)
         } else {
           // somehow the route got broken
           console.warn('Broken route for:', msg)
@@ -94,174 +560,28 @@ IpEventEmitter.prototype.onProcessMessage = function(msg) {
       
       break
     case MSG_TYPE_BROADCAST:
-      // We got the broadcast of an event
-      // console.log(msg)
+      // console.log('MSG_TYPE_BROADCAST', em.pid, msg)
       
-      msg.pids.push(this.pid)
-      
-      // emit on this object
-      this._emitScoped(msg, msg.name, msg.args)
-      
-      // send the event to listening child processes:
-      var self = this
-      Object.keys(self.childs).forEach(function(pid) {
-        var child = self.childs[pid]
-        if(child.listeners[msg.name] || msg.name === 'addListener') {
-          child.process.send(msg)
-        }
-      })
-      
-      break
-    default:
-      // It is an error if the msg is of unknown format.
-      console.log(typeof msg, msg)
-      this.emit('error', new Error('Unknown message type: '+msg.type))
-      break
-  }
-}
-
-// Emits an event on the object and sends it to the parent-
-// process if process.send exists
-IpEventEmitter.prototype.emit = function(/*name, arg1, arg2, ...*/) {
-  
-  // emit on this object
-  EventEmitter.prototype.emit.apply(this, arguments)
-  
-  // create the message
-  var msg = {
-    pid: this.pid                                    // pid of the origin
-    , pids: [this.pid]                               // chain of pids
-    , type: MSG_TYPE_EVENT                           // type of command
-    , name: arguments[0]                             // name of the event
-    , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
-  }
-  
-  // send the event up to the parent process
-  if(process.send) {
-    // this starts ipc-emitting
-    process.send(msg)
-  }
-  
-  return this
-}
-
-// Pushes an event down to a child process.
-// pids is the route to take.
-IpEventEmitter.prototype.push = function(/*pids, event, arg1, arg2, ...*/) {
-  var route = arguments[0].slice(0)
-    , pid = route.pop()
-    , pids = []
-  
-  // check if next pid in route is the current pid
-  if(pid === this.pid) {
-    pids.push(pid)
-    pid = route.pop()
-  } else {
-    // make sure that the current pid is in the chain of pids the
-    // message traveled
-    pids.push(this.pid)
-  }
-  
-  var child = this.childs[pid]
-  
-  if(child) {
-    // child process found, start pushing the message
-    child.process.send({
-      pid: this.pid                                    // pid that started the push
-      , pids: pids                                     // chain of pids
-      , to: route.lenght ? route[0] : pid              // target pid
-      , route: route                                   // route to take
-      , type: MSG_TYPE_PUSH                            // type of command
-      , name: arguments[1]                             // name of the event
-      , args: Array.prototype.slice.call(arguments, 2) // arguments of the event
-    })
-  } else {
-    // not child process found to push the message to
-    console.log(pid, route, Object.keys(this.childs))
-    this.emit('error', new Error('Can not push to '+pid+': Process not found.'))
-  }
-  
-  return this
-}
-
-// Broadcasts an event to all listenting child processes.
-IpEventEmitter.prototype.broadcast = function(/*event, arg1, arg2, ...*/) {
-  var self = this
-  
-  // create the message
-  var msg = {
-    pid: self.pid                                    // pid of the origin
-    , pids: [self.pid]                               // chain of pids
-    , type: MSG_TYPE_BROADCAST                       // type of command
-    , name: arguments[0]                             // name of the event
-    , args: Array.prototype.slice.call(arguments, 1) // arguments of the event
-  }
-  
-  // send the event to listening child processes:
-  Object.keys(self.childs).forEach(function(pid) {
-    var child = self.childs[pid]
-    if(child.listeners[msg.name]) {
-      child.process.send(msg)
-    }
-  })
-  
-  return this
-}
-
-// Forks a new child-process.
-IpEventEmitter.prototype.fork = function(path, args) {
-  var child = cp.fork(path, args || [])
-  return this.registerProcess(child)
-}
-
-// Forks a new worker child-process.
-IpEventEmitter.prototype.worker = function() {
-  var child = cluster.fork()
-  return this.registerProcess(child)
-}
-
-// Registers a new child-process.
-IpEventEmitter.prototype.registerProcess = function(child) {
-  if(this.childs[child.pid]) {
-    this.emit('error', new Error('Child already registered, pid '+child.pid))
-    return
-  }
-  var child = {
-    pid: child.pid
-    , process: child
-    , listeners: {} // events the process listens to
-  }
-  child.process.on('message', this.onChildProcessMessage.bind(this, child))
-  child.process.on('exit', this.onChildProcessExit.bind(this, child))
-  this.childs[child.pid] = child
-  this.childsOnline += 1
-  return child
-}
-
-// Handles messages from a child process.
-IpEventEmitter.prototype.onChildProcessMessage = function(child, msg) {
-  switch(msg.type) {
-    case MSG_TYPE_EVENT:
-      // console.log('onChildProcessMessage', msg)
-      
-      // track listeners of child process
-      if(msg.name === 'newListener') {
-        child.listeners[msg.args[0]] = true
-      }
-      
-      // push pid to pid-chain
-      msg.pids.push(this.pid)
+      msg.pids.push(em.pid)
       
       // emit on this object
-      this._emitScoped(msg, msg.name, msg.args)
+      _emitScoped(msg, msg.event, msg.args)
       
-      // send the event up to the parent process
-      if(process.send) {
-        // if(process.send.isSocket && msg.name == 'ping') {
-          // console.log('SEND OVER SOCKET', msg)
-        // }
+      // 
+      if(em.parentPid && msg.pids.indexOf(em.parentPid) === -1) {
         process.send(msg)
       }
+      
+      // send the event to listening child processes:
+      var child
+      Object.keys(childs).forEach(function(pid) {
+        if(msg.pids.indexOf(pid) === -1) {
+          child = childs[pid]
+          if(child.listeners[msg.event]) {
+            child.send(msg)
+          }
+        }
+      })
       
       break
     default:
@@ -274,64 +594,45 @@ IpEventEmitter.prototype.onChildProcessMessage = function(child, msg) {
       }
       // It is an error if the msg is of unknown format.
       console.log(typeof msg, msg)
-      this.emit('error', new Error('Unknown message type: '+msg.type))
+      em.emit('error', new Error('Unknown message type: '+msg.type))
       break
   }
 }
 
-// Handles the exit of a child.
-IpEventEmitter.prototype.onChildProcessExit = function(child, code, signal) {
-  this.childs[child.pid] = null
-  delete this.childs[child.pid]
-  this.childsOnline -= 1
-  this.pids = [this.pid]
-  this.emit('offline', child.pid)
-  child = null
-}
-
 // 
-IpEventEmitter.prototype._emitScoped = function(scope, eventName, args) {
-  var listeners = this.listeners(eventName)
-  if(listeners.length) {
-    listeners.forEach(function(listener) {
-      listener.apply(scope, args)
-    })
-  }
-}
-
-// 
-IpEventEmitter.prototype.addToNetmap = function(pids) {
-  var t = this.netmap
+function addToNetmap(pids) {
+  var t = netmap
     , pids = pids.slice(0)
+    , pid
   while(pids.length) {
-    var pid = pids.pop()
+    pid = pids.pop()
     t = t[pid] = t[pid] || {}
   }
-  // this.pollNetmap()
+  // pollNetmap()
 }
 
 // 
-IpEventEmitter.prototype.removeFromNetmap = function(pids) {
-  var t = this.netmap
+function removeFromNetmap(pids) {
+  var t = netmap
     , pids = pids.slice(0)
+    , pid
   while(pids.length) {
-    var pid = pids.pop()
+    pid = pids.pop()
     if(!pids.length) {
       delete t[pid]
     } else {
       t = t[pid]
     }
   }
-  // this.pollNetmap()
+  // pollNetmap()
 }
 
 // 
-IpEventEmitter.prototype.pollNetmap = function() {
-  var self = this
-    , t = self.netmap[self.pid]
+function pollNetmap() {
+  var t = netmap[em.pid]
   if(t) {
     Object.keys(t).forEach(function(k) {
-      if(!self.childs[k]) {
+      if(!childs[k]) {
         t[k] = null
         delete t[k]
       }
@@ -340,21 +641,22 @@ IpEventEmitter.prototype.pollNetmap = function() {
 }
 
 // 
-IpEventEmitter.prototype.printNetmap = function() {
-  console.log(JSON.stringify(this.netmap, null, '  '))
+function printNetmap() {
+  console.log(JSON.stringify(netmap, null, '  '))
 }
 
 // 
-IpEventEmitter.prototype.processSendShim = function() {
-  var self = this
+function processSendShim() {
+  // set options
+  jsonsocket.options(opts.socket)
   
   // open a tcp/ip socket
   var socket = jsonsocket()
   
   socket.on('listening', function(server) {
-    // 
-    EventEmitter.prototype.emit.call(self, 'ready')
-    self.emit('online')
+    // console.log('Listening...', server.address())
+    em.emit('ready')
+    bubble('online')
   })
   
   socket.on('stream', function(req, res, conn, server) {
@@ -369,7 +671,7 @@ IpEventEmitter.prototype.processSendShim = function() {
       child.send = function(msg) {
         res.write(msg)
       }
-      self.registerProcess(child)
+      registerProcess(child)
       
       // emit data from input stream as 'message' event on the
       // fake child-process
@@ -381,7 +683,7 @@ IpEventEmitter.prototype.processSendShim = function() {
       // if the connection closes, emit an 'exit' event on the
       // fake child-process
       conn.on('close', function(had_error) {
-        console.log('%s Connection closed: %s', self.pid, child.pid)
+        console.log('%s Connection closed: %s', em.pid, child.pid)
         child.emit('exit', had_error?1:0, null)
         child = null
       })
@@ -390,8 +692,8 @@ IpEventEmitter.prototype.processSendShim = function() {
       
       // 
       var a = conn.address()
-      self.pid = a.address+':'+a.port
-      self.pids = [self.pid]
+      em.pid = a.address+':'+a.port
+      em.pids = [em.pid]
       
       process.send = function(msg) {
         res.write(msg)
@@ -402,7 +704,6 @@ IpEventEmitter.prototype.processSendShim = function() {
       // emit data from input stream as 'message' event on the
       // process
       req.on('data', function(d) {
-        // console.log('GOT DATA', d)
         process.emit('message', d)
       })
       
@@ -412,11 +713,11 @@ IpEventEmitter.prototype.processSendShim = function() {
         delete process.send
       })
       
-      EventEmitter.prototype.emit.call(self, 'ready')
-      self.emit('online')
+      em.emit('ready')
+      bubble('online')
     }
     
   })
   
-  console.log(self.pid)
+  console.log(em.pid)
 }

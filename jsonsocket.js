@@ -1,19 +1,32 @@
 
-module.exports = shim
+module.exports = create
 
 var net = require('net')
 var Stream = require('stream').Stream
 var Lazy = require('lazy')
 var EventEmitter = require('events').EventEmitter
 
-var defaultSocketPath = '/tmp/node-process-send-shim.sock'
-var defaultPort = 7100
-var defaultHost = 'localhost'
+var opts = {
+  socketPath: '/tmp/node-jsonsocket.sock'
+  , port: 7100
+  , host: 'localhost'
+  , reconnect: true
+  , delayReconnect: 1000
+}
 
-var reconnect = true
-var delayReconnect = 1000
+create.options = options
 
-function shim() {
+function options(options) {
+  options = options || {}
+  
+  Object.keys(options).forEach(function(k) {
+    if(opts.hasOwnProperty(k)) {
+      opts[k] = options[k]
+    }
+  })
+}
+
+function create(socketPath, port, host) {
   
   var em = new EventEmitter()
   
@@ -73,7 +86,7 @@ function shim() {
   em.on('connect', onConnection)
   em.on('reconnect', onConnection)
   
-  start(em)
+  start(em, socketPath || port, host)
   
   return em
 }
@@ -91,8 +104,8 @@ function start(em, port, host, cb) {
     host = null
   }
   
-  port = port || defaultSocketPath || defaultPort
-  host = host || (!isNaN(port) ? defaultHost : null)
+  port = port || opts.socketPath || opts.port
+  host = host || (!isNaN(port) ? opts.host : null)
   cb = cb || function(){}
   
   function onError(err) {
@@ -148,8 +161,8 @@ function connect(em, port, host, cb) {
     host = null
   }
   
-  port = port || defaultSocketPath || defaultPort
-  host = host || (!isNaN(port) ? defaultHost : null)
+  port = port || opts.socketPath || opts.port
+  host = host || (!isNaN(port) ? opts.host : null)
   cb = cb || function(){}
   
   var conn
@@ -157,9 +170,9 @@ function connect(em, port, host, cb) {
   function onError(err) {
     conn.removeListener('connect', onConnect)
     
-    if(err.code === 'ENOENT' && isNaN(port) && defaultPort) {
+    if(err.code === 'ENOENT' && isNaN(port) && opts.port) {
       console.warn(new Error(err.code+' on '+port+', '+host))
-      connect(em, defaultPort, cb)
+      connect(em, opts.port, cb)
       return
     } else if(err.code === 'ECONNREFUSED' && em.numReconnects) {
       console.warn(new Error(err.code+' on '+port+', '+host))
@@ -175,7 +188,7 @@ function connect(em, port, host, cb) {
     
     conn.on('close', function(had_error) {
       // reconnect
-      if(reconnect) {
+      if(opts.reconnect) {
         _reconnect(em, port, host)
       }
     })
@@ -202,10 +215,10 @@ function connect(em, port, host, cb) {
 
 function _reconnect(em, port, host) {
   em.numReconnects += 1
-  if(delayReconnect) {
+  if(opts.delayReconnect) {
     setTimeout(function() {
       connect(em, port, host)
-    }, delayReconnect)
+    }, opts.delayReconnect)
   } else {
     connect(em, port, host)
   }
@@ -222,14 +235,14 @@ function listen(em, port, host, cb) {
     host = null
   }
   
-  port = port || defaultSocketPath || defaultPort
-  host = host || (!isNaN(port) ? defaultHost : null)
+  port = port || opts.socketPath || opts.port
+  host = host || (!isNaN(port) ? opts.host : null)
   cb = cb || function(){}
   
   function onError(err) {
-    if(err.code === 'EACCES' && isNaN(port) && defaultPort) {
+    if(err.code === 'EACCES' && isNaN(port) && opts.port) {
       console.error(new Error(err.code+' on '+port+', '+host))
-      listen(em, defaultPort, cb)
+      listen(em, opts.port, cb)
       return
     }
     cb(err)

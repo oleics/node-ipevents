@@ -1,27 +1,25 @@
 {
   "name": "ipevents"
   , "description": "Inter-process EventEmitter over process.send and TCP/IP or UNIX Domain Sockets"
-  , "version": "0.0.0"
+  , "version": "0.1.0"
   , "author": {
-    "name": "Oliver Leics"
-    , "email": "oliver.leics@gmail.com"
-  }
+      "name": "Oliver Leics"
+      , "email": "oliver.leics@gmail.com"
+    }
   , "repository": {
-    "type": "git"
-    , "url": "git://github.com/oleics/node-ipevents.git"
-  }
-  , "contributors": []
+      "type": "git"
+      , "url": "git://github.com/oleics/node-ipevents.git"
+    }
+  , "keywords": [
+      "ipc"
+      , "events"
+      , "process"
+    ]
   , "main": "./ipevents.js"
-  , "directories": {
-  }
   , "engines": {
-    "node": ">= 0.6.0"
-  }
+      "node": ">= 0.6.0"
+    }
   , "dependencies": {
-    "lazy": "1.0.x"
-  }
-  , "devDependencies": {
-  }
-  , "scripts": {
-  }
+      "lazy": "1.0.x"
+    }
 }

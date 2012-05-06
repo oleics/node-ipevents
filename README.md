@@ -99,7 +99,7 @@ Boolean TRUE if the process is a master according to cluster.isWorker
 ``.options(options)``  
 Sets the options for the inter-process event emitter.
 
-#### Events
+#### Functions: Events
 
 ``.bubble(eventName, arg1, arg2, ...)``  
 Emits an event and sends it up to the parent-process.
@@ -125,7 +125,7 @@ Pushes an event to a specific process.
 ``.broadcast(eventName, arg1, arg2, ...)``  
 Sends an event to all processes.
 
-#### Process
+#### Functions: Processes
 
 ``.fork(path, arguments)``  
 Forks a new node child-process.

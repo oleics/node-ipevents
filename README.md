@@ -21,10 +21,11 @@ ipem
     console.log('ready', this.pid)
     
     ipem.on('online', function() {
-      console.log('process online', this.pid, this.pids)
+      console.log('process online', this.from, this.pids)
     })
+    
     ipem.on('offline', function() {
-      console.log('process online', this.pid, this.pids)
+      console.log('process online', this.from, this.pids)
     })
   })
 .start()

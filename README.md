@@ -30,22 +30,6 @@ ipem
 .start()
 ```
 
-Anatomy of a message
---------------------
-
-```js
-{
-  from: Number,String // The origin (pid) of the message.
-  pids: Array         // An array of each pid the message passed.
-  to: Number,String   // Target of the message.
-  route: Array        // An array of process-pids representing
-                      // the route the message should take.
-  type: Number        // Type of the message (eg event, push, broadcast).
-  event: String       // Name of the event.
-  args: Array         // Array of arguments for the event
-}
-```
-
 API
 ---
 
@@ -145,6 +129,25 @@ Emitted to signal other processes that a new process connected.
 
 ``offline``  
 Emitted on the exit of a process.
+
+``parent`` pid  
+Emitted to give a process the pid of its parent-process.
+
+Anatomy of a message
+--------------------
+
+```js
+{
+  from: Number,String // The origin (pid) of the message.
+  pids: Array         // An array of each pid the message passed.
+  to: Number,String   // Target of the message.
+  route: Array        // An array of process-pids representing
+                      // the route the message should take.
+  type: Number        // Type of the message (eg event, push, broadcast).
+  event: String       // Name of the event.
+  args: Array         // Array of arguments for the event
+}
+```
 
 MIT License
 -----------

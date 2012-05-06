@@ -13,6 +13,7 @@ Inter-process Event-Emitter
 ```js
 var ipem = require('ipevents')
 
+// ipem is an instance of events.EventEmitter
 ipem
   .options({
   })

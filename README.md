@@ -60,6 +60,9 @@ Automatically reconnect to server.
 ``socket.delayReconnect`` (default: 3000)  
 Delay automatic reconnects in milliseconds.
 
+``socket.onlyConnect`` (default: false)  
+Disable the creation of a server (client-only-mode).
+
 ### Attributes
 
 ``.pid`` (String)  

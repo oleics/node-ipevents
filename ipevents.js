@@ -24,7 +24,8 @@ var em = new EventEmitter()
       // socket
       , useSocket: true
       , socket: {
-          socketPath: null
+          onlyConnect: false
+          , socketPath: null
           , port: 7100
           , host: 'localhost'
           , reconnect: true
@@ -711,6 +712,7 @@ function processSendShim() {
       conn.on('close', function() {
         process.send = null
         delete process.send
+        em.emit('offline', em.parentPid)
       })
       
       em.emit('ready')

@@ -7,7 +7,8 @@ var Lazy = require('lazy')
 var EventEmitter = require('events').EventEmitter
 
 var opts = {
-  socketPath: '/tmp/node-jsonsocket.sock'
+  onlyConnect: false
+  , socketPath: '/tmp/node-jsonsocket.sock'
   , port: 7100
   , host: 'localhost'
   , reconnect: true
@@ -104,6 +105,9 @@ function start(em, port, host, cb) {
     host = null
   }
   
+  var startPort = port
+    , startHost = host
+  
   port = port || opts.socketPath || opts.port
   host = host || (!isNaN(port) ? opts.host : null)
   cb = cb || function(){}
@@ -111,7 +115,11 @@ function start(em, port, host, cb) {
   function onError(err) {
     if(err.code == 'ECONNREFUSED') {
       em.emit('warn', new Error(err.code+' on '+port+', '+host))
-      listen(em, port, host)
+      if(opts.onlyConnect) {
+        _reconnect(em, startPort, startHost)
+      } else {
+        listen(em, port, host)
+      }
     } else {
       em.removeListener('listening', onListening)
       em.removeListener('connection', onConnection)

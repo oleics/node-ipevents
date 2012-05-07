@@ -28,7 +28,8 @@ ipem
     , delayRestart: 0
     , useSocket: true
     , socket: {
-        socketPath: null
+        onlyConnect: false
+        , socketPath: null
         , port: 7200
         , host: 'localhost'
         , reconnect: true

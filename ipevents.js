@@ -307,7 +307,7 @@ function sendTo(/*route, event, arg1, arg2, ...*/) {
     process.send(msg)
   } else {
     // no process found to push the message to
-    console.log(em.pid, to, route, Object.keys(childs))
+    // console.log(em.pid, to, route, Object.keys(childs))
     em.emit('error', new Error('Can not push to '+to+': Process not found.'))
   }
   
@@ -599,7 +599,7 @@ function handleMessage(msg) {
         break
       }
       // It is an error if the msg is of unknown format.
-      console.log(typeof msg, msg)
+      // console.log(typeof msg, msg)
       em.emit('error', new Error('Unknown message type: '+msg.type))
       break
   }

@@ -719,6 +719,7 @@ function processSendShim() {
         process.send = null
         delete process.send
         em.emit('offline', em.parentPid)
+        em.parentPid = null
       })
       
       em.emit('ready')

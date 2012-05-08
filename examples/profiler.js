@@ -32,23 +32,25 @@ function display() {
   
   var out = ''
   out += util.format(
-    '%s %s %s %s %s %s\n'
+    '%s %s %s %s %s %s %s\n'
     , pad('num', 8)
     , pad('sum', 8)
     , pad('avg', 8)
     , pad('min', 8)
     , pad('max', 8)
+    , pad('fps', 8)
     , 'name'
   )
   profiles.forEach(function(p) {
     // console.log(p)
     out += util.format(
-      '%s %s %s %s %s %s\n'
+      '%s %s %s %s %s %s %s\n'
       , pad(p.num, 8)
       , pad(p.sum, 8)
       , pad(p.avg.toFixed(3), 8)
       , pad(p.min, 8)
       , pad(p.max, 8)
+      , pad(p.fps.toFixed(1), 8)
       , p.name
     )
   })
@@ -62,6 +64,7 @@ function calc(name) {
     , avg = sum / num
     , min = p.reduce(function(a, b) { return Math.min(a, b) }, Infinity)
     , max = p.reduce(function(a, b) { return Math.max(a, b) }, 0)
+    , fps = num * 1000 / sum
   return {
     name: name
     , num: num
@@ -69,6 +72,7 @@ function calc(name) {
     , avg: avg
     , min: min
     , max: max
+    , fps: fps
   }
 }
 

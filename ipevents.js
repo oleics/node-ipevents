@@ -558,7 +558,7 @@ function handleMessage(msg) {
           process.send(msg)
         } else {
           // somehow the route got broken
-          console.warn('Broken route for:', msg)
+          // console.warn('Broken route for:', msg)
           // notify the sender
           
         }
@@ -705,7 +705,9 @@ function processSendShim() {
       em.pids = [em.pid]
       
       process.send = function(msg) {
-        res.write(msg)
+        if(res.writable) {
+          res.write(msg)
+        }
       }
       
       process.send.isSocket = true

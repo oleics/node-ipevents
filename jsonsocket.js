@@ -56,6 +56,7 @@ function create(socketPath, port, host) {
       }
     }
     s.end = function() {
+      s.writable = false
       this.emit('end')
     }
     return s

@@ -1,6 +1,11 @@
 
-var EventEmitter = require('events').EventEmitter
-  , util = require('util')
+try {
+  var EventEmitter = require('eventemitter2').EventEmitter2
+} catch(e) {
+  var EventEmitter = require('events').EventEmitter
+}
+
+var util = require('util')
   , cp = require('child_process')
   , cluster = require('cluster')
   , jsonsocket = require('./jsonsocket')

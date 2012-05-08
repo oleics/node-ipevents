@@ -39,91 +39,84 @@ ipem
   .on('error', function(err) {
     // console.error(err.stack||err)
   })
+  .on('online', function() {
+    console.log(
+      '%s process online: pid %s, route %j'
+      , ipem.pid
+      , this.from
+      , this.pids
+    )
+    
+    testScope.call(this)
+  })
+  .on('offline', function(pid) {
+    console.log(
+      '%s process offline: pid %s, parent %s, route %j'
+      , ipem.pid
+      , pid
+      , this.from
+      , this.pids
+    )
+    
+    testScope.call(this)
+    
+    if(ipem.childsOnline===0) {
+      process.exit()
+    }
+  })
+  // ping pong
+  .on('profile', function(was_type, durr) {
+    // console.log('profile', was_type, durr, this.pids)
+    testScope.call(this)
+    
+    profiler.reg(was_type)
+    profiler.add(was_type, durr)
+    // profiler.reg(this.from+'-'+was_type)
+    // profiler.add(this.from+'-'+was_type, durr)
+  })
+  .on('pong', function(nowPing, originPing, now, origin, was_type) {
+    var n = Date.now()
+    
+    // console.log(
+      // '%s pong %s %s ms %s ms %s ms %j'
+      // , pad(ipem.pid, 5)
+      // , pad(was_type, 10)
+      // , pad(now-nowPing, 3)
+      // , pad(n-now, 3)
+      // , pad(n-nowPing, 3)
+      // , this.pids
+      // , originPing
+    // )
+    
+    testScope.call(this)
+    
+    assert.strictEqual(ipem.pid, originPing)
+    assert.strictEqual(this.pids.slice(-1)[0], originPing)
+    assert.strictEqual(this.from, origin)
+    
+    ipem.sendToGrandMaster('profile', was_type, n-nowPing)
+  })
+  .on('ping', function(now, origin) {
+    var n = Date.now()
+    
+    // console.log(
+      // '%s ping %s %s ms %j'
+      // , pad(ipem.pid, 5)
+      // , pad(this.type, 14)
+      // , pad(n-now, 3)
+      // , this.pids
+    // )
+    
+    testScope.call(this)
+    assert.strictEqual(this.pids[0], origin)
+    assert.strictEqual(this.from, origin)
+    
+    ipem.sendTo(this.pids, 'pong', now, origin, n, ipem.pid, this.type)
+  })
   .on('ready', function() {
     console.log('Ready: '+this.pid+'')
     
     assert.strictEqual(ipem, this)
-    
-    ipem.on('online', function() {
-      console.log(
-        '%s process online: pid %s, route %j'
-        , ipem.pid
-        , this.from
-        , this.pids
-      )
-      
-      testScope.call(this)
-    })
-    
-    ipem.on('offline', function(pid) {
-      console.log(
-        '%s process offline: pid %s, parent %s, route %j'
-        , ipem.pid
-        , pid
-        , this.from
-        , this.pids
-      )
-      
-      testScope.call(this)
-      
-      if(ipem.childsOnline===0) {
-        process.exit()
-      }
-    })
-    
-    // ping pong
-    
-    ipem.on('profile', function(was_type, durr) {
-      // console.log('profile', was_type, durr, this.pids)
-      testScope.call(this)
-      
-      profiler.reg(was_type)
-      profiler.add(was_type, durr)
-      // profiler.reg(this.from+'-'+was_type)
-      // profiler.add(this.from+'-'+was_type, durr)
-    })
-    
-    ipem.on('pong', function(nowPing, originPing, now, origin, was_type) {
-      var n = Date.now()
-      
-      // console.log(
-        // '%s pong %s %s ms %s ms %s ms %j'
-        // , pad(ipem.pid, 5)
-        // , pad(was_type, 10)
-        // , pad(now-nowPing, 3)
-        // , pad(n-now, 3)
-        // , pad(n-nowPing, 3)
-        // , this.pids
-        // , originPing
-      // )
-      
-      testScope.call(this)
-      
-      assert.strictEqual(ipem.pid, originPing)
-      assert.strictEqual(this.pids.slice(-1)[0], originPing)
-      assert.strictEqual(this.from, origin)
-      
-      ipem.sendToGrandMaster('profile', was_type, n-nowPing)
-    })
-    
-    ipem.on('ping', function(now, origin) {
-      
-      var n = Date.now()
-      
-      // console.log(
-        // '%s ping %s %s ms %j'
-        // , pad(ipem.pid, 5)
-        // , pad(this.type, 14)
-        // , pad(n-now, 3)
-        // , this.pids
-      // )
-      
-      testScope.call(this)
-      assert.strictEqual(this.pids[0], origin)
-      assert.strictEqual(this.from, origin)
-      
-      ipem.sendTo(this.pids, 'pong', now, origin, n, ipem.pid, this.type)
-    })
     
     function ping() {
       ipem.sendToParents('ping', Date.now(), ipem.pid)
@@ -143,6 +136,7 @@ ipem
         ipem.printNetmap()
       }, 15000)
     } else {
+      // setTimeout(process.exit, Math.floor(Math.random()*30000)+60000)
       setTimeout(process.exit, Math.floor(Math.random()*30000))
     }
     

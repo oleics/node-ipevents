@@ -626,8 +626,10 @@ function removeFromNetmap(pids) {
     pid = pids.pop()
     if(!pids.length) {
       delete t[pid]
-    } else {
+    } else if(t[pid]) {
       t = t[pid]
+    } else {
+      break
     }
   }
   // pollNetmap()

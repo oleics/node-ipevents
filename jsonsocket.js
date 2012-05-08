@@ -51,9 +51,7 @@ function create(socketPath, port, host) {
     s.readable = false
     s.writable = true
     s.write = function(d) {
-      if(stream.writable) {
-        stream.write(JSON.stringify(d)+'\n')
-      }
+      stream.write(JSON.stringify(d)+'\n')
     }
     s.end = function() {
       s.writable = false
@@ -66,7 +64,12 @@ function create(socketPath, port, host) {
     var rs = _createJsonReadStream(conn)
       , ws = _createJsonWriteStream(conn)
     
+    conn.on('end', function() {
+      console.log('CONNECTION END')
+    })
+    
     conn.on('close', function() {
+      console.log('CONNECTION CLOSED')
       ws.on('end', function() {
         ws.emit('close')
         ws = null

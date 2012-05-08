@@ -655,6 +655,8 @@ function printNetmap() {
 
 // 
 function processSendShim() {
+  var started = false
+  
   // set options
   jsonsocket.options(opts.socket)
   
@@ -705,8 +707,10 @@ function processSendShim() {
       em.pids = [em.pid]
       
       process.send = function(msg) {
-        if(res.writable) {
+        try {
           res.write(msg)
+        } catch(err) {
+          em.emit('error', err)
         }
       }
       
@@ -726,7 +730,10 @@ function processSendShim() {
         em.parentPid = null
       })
       
-      em.emit('ready')
+      if(!started) {
+        started = true
+        em.emit('ready')
+      }
       bubble('online')
     }
     

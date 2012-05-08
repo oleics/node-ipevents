@@ -113,7 +113,7 @@ ipem
     
     ipem.sendTo(this.pids, 'pong', now, origin, n, ipem.pid, this.type)
   })
-  .on('ready', function() {
+  .once('ready', function() {
     console.log('Ready: '+this.pid+'')
     
     assert.strictEqual(ipem, this)

@@ -699,6 +699,7 @@ function processSendShim() {
       // 
       var a = conn.address()
       em.pid = a.address+':'+a.port
+      em.from = em.pid
       em.pids = [em.pid]
       
       process.send = function(msg) {

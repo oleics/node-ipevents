@@ -4,6 +4,12 @@ var assert = require('assert')
   , ipem = require('..')
 
 function testScope() {
+  assert.notStrictEqual(typeof this.from, 'undefined')
+  assert.notStrictEqual(typeof this.pids, 'undefined')
+  assert.notStrictEqual(typeof this.type, 'undefined')
+  assert.notStrictEqual(typeof this.event, 'undefined')
+  assert.notStrictEqual(typeof this.args, 'undefined')
+  
   if(ipem.pid === this.from) {
     assert.deepEqual(this.pids, [this.from])
     assert.deepEqual(this.pids, [ipem.pid])
@@ -69,8 +75,8 @@ ipem
     // console.log('profile', was_type, durr, this.pids)
     testScope.call(this)
     
-    profiler.reg(was_type)
-    profiler.add(was_type, durr)
+    profiler.reg(this.pids.length + ':' + was_type)
+    profiler.add(this.pids.length + ':' + was_type, durr)
     // profiler.reg(this.from+'-'+was_type)
     // profiler.add(this.from+'-'+was_type, durr)
   })
@@ -94,7 +100,7 @@ ipem
     assert.strictEqual(this.pids.slice(-1)[0], originPing)
     assert.strictEqual(this.from, origin)
     
-    ipem.sendToGrandMaster('profile', was_type, n-nowPing)
+    ipem.sendToGrandMaster('profile', this.pids.length + ':' + was_type, n-nowPing)
   })
   .on('ping', function(now, origin) {
     var n = Date.now()

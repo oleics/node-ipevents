@@ -49,6 +49,8 @@ em.isWorker = cluster.isWorker
 // set to comply with messages
 em.from = em.pid
 em.pids = [em.pid]
+em.type = ''
+em.args = ''
 
 // functions
 em.options = options

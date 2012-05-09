@@ -350,17 +350,21 @@ function broadcast(/*event, arg1, arg2, ...*/) {
 }
 
 // Forks a new child-process.
-function fork(path, args) {
+function fork(path, args, options) {
   var c = cp.fork(path, args || [])
   
+  options = options || {}
+  c.restart = options.restart != null ? options.restart : opts.restart
+  c.delayRestart = options.delayRestart != null ? options.delayRestart : opts.delayRestart
+  
   c.once('exit', function() {
-    if(opts.restart) {
-      if(opts.delayRestart) {
+    if(c.restart) {
+      if(c.delayRestart) {
         setTimeout(function() {
-          fork(path, args)
-        }, opts.delayRestart)
+          fork(path, args, options)
+        }, c.delayRestart)
       } else {
-        fork(path, args)
+        fork(path, args, options)
       }
     }
     c = null
@@ -370,17 +374,21 @@ function fork(path, args) {
 }
 
 // Forks a new worker child-process.
-function worker() {
+function worker(options) {
   var c = cluster.fork()
   
+  options = options || {}
+  c.restart = options.restart != null ? options.restart : opts.restart
+  c.delayRestart = options.delayRestart != null ? options.delayRestart : opts.delayRestart
+  
   c.once('exit', function() {
-    if(opts.restart) {
-      if(opts.delayRestart) {
+    if(c.restart) {
+      if(c.delayRestart) {
         setTimeout(function() {
-          worker()
-        }, opts.delayRestart)
+          worker(options)
+        }, c.delayRestart)
       } else {
-        worker()
+        worker(options)
       }
     }
     c = null
